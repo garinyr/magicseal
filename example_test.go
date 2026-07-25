@@ -9,19 +9,34 @@ import (
 )
 
 // minimalDOCX creates a minimal valid DOCX in memory (ZIP with required entries).
-func minimalDOCX() []byte {
+func minimalDOCX() ([]byte, error) {
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
-	w.Create("word/document.xml")
-	w.Create("_rels/.rels")
-	w.Create("[Content_Types].xml")
-	w.Close()
-	return buf.Bytes()
+
+	if _, err := w.Create("word/document.xml"); err != nil {
+		return nil, err
+	}
+	if _, err := w.Create("_rels/.rels"); err != nil {
+		return nil, err
+	}
+	if _, err := w.Create("[Content_Types].xml"); err != nil {
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }
 
 func ExampleValidate() {
-	data := minimalDOCX()
-	err := magicseal.Validate(data, magicseal.FormatDOCX)
+	data, err := minimalDOCX()
+	if err != nil {
+		fmt.Println("invalid:", err)
+		return
+	}
+
+	err = magicseal.Validate(data, magicseal.FormatDOCX)
 	if err != nil {
 		fmt.Println("invalid:", err)
 		return
@@ -35,4 +50,3 @@ func ExampleValidate_unsupported() {
 	fmt.Println(err)
 	// Output: magicseal: unsupported format: "unknown"
 }
-
