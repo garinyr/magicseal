@@ -9,22 +9,24 @@ import (
 
 // makeMinimalZip creates a minimal valid ZIP file in memory with the given entry names.
 // Entries are stored (no compression) with empty content.
-func makeMinimalZip(entryNames []string) []byte {
+// It uses t.Helper() so failures are attributed to the call site.
+func makeMinimalZip(t testing.TB, entryNames []string) []byte {
+	t.Helper()
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
 	for _, name := range entryNames {
 		if _, err := w.Create(name); err != nil {
-			panic(err)
+			t.Fatalf("zip.Create(%q): %v", name, err)
 		}
 	}
 	if err := w.Close(); err != nil {
-		panic(err)
+		t.Fatalf("zip.Close: %v", err)
 	}
 	return buf.Bytes()
 }
 
 func TestParseZipValid(t *testing.T) {
-	data := makeMinimalZip([]string{"word/document.xml", "_rels/.rels", "[Content_Types].xml"})
+	data := makeMinimalZip(t, []string{"word/document.xml", "_rels/.rels", "[Content_Types].xml"})
 	entries, err := parseZip(data)
 	if err != nil {
 		t.Fatalf("parseZip(valid ZIP): unexpected error: %v", err)
@@ -66,7 +68,7 @@ func TestParseZipNotZipData(t *testing.T) {
 
 func TestParseZipTruncated(t *testing.T) {
 	// Take a valid ZIP and truncate it — simulate interrupted upload.
-	full := makeMinimalZip([]string{"a", "b", "c"})
+	full := makeMinimalZip(t, []string{"a", "b", "c"})
 	truncated := full[:len(full)-20] // chop off the central directory
 	_, err := parseZip(truncated)
 	if err == nil {
@@ -79,7 +81,7 @@ func TestParseZipTruncated(t *testing.T) {
 
 func TestParseZipPrependGarbage(t *testing.T) {
 	// Prepend garbage bytes before a valid ZIP — simulates prepend attack.
-	valid := makeMinimalZip([]string{"readme.txt"})
+	valid := makeMinimalZip(t, []string{"readme.txt"})
 	garbage := append([]byte("junk data here "), valid...)
 	entries, err := parseZip(garbage)
 	// archive/zip.NewReader uses EOCD at the end, so prepend garbage
@@ -96,7 +98,7 @@ func TestParseZipPrependGarbage(t *testing.T) {
 
 func TestParseZipCorruptCentralDirectory(t *testing.T) {
 	// Corrupt the central directory portion (tail of file) by overwriting bytes.
-	valid := makeMinimalZip([]string{"a", "b"})
+	valid := makeMinimalZip(t, []string{"a", "b"})
 	corrupt := make([]byte, len(valid))
 	copy(corrupt, valid)
 	// Scramble the last 10 bytes (EOCD / central directory area)
