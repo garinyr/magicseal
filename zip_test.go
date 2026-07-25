@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"errors"
-	"os"
 	"testing"
 )
 
@@ -14,9 +13,13 @@ func makeMinimalZip(entryNames []string) []byte {
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
 	for _, name := range entryNames {
-		w.Create(name)
+		if _, err := w.Create(name); err != nil {
+			panic(err)
+		}
 	}
-	w.Close()
+	if err := w.Close(); err != nil {
+		panic(err)
+	}
 	return buf.Bytes()
 }
 
@@ -113,10 +116,17 @@ func TestParseZipPreservesSizes(t *testing.T) {
 	// Create a ZIP with a known content to verify size metadata.
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
-	fw, _ := w.Create("hello.txt")
+	fw, err := w.Create("hello.txt")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
 	content := []byte("hello world")
-	fw.Write(content)
-	w.Close()
+	if _, err := fw.Write(content); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
 
 	entries, err := parseZip(buf.Bytes())
 	if err != nil {
@@ -128,14 +138,4 @@ func TestParseZipPreservesSizes(t *testing.T) {
 	if entries[0].UncompressedSize64 != uint64(len(content)) {
 		t.Errorf("UncompressedSize64: got %d, want %d", entries[0].UncompressedSize64, len(content))
 	}
-}
-
-// Helper for tests that need actual OS files (Phase 1.8).
-func makeZipFile(t *testing.T, path string, entryNames []string) {
-	t.Helper()
-	data := makeMinimalZip(entryNames)
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		t.Fatalf("failed to write test fixture %s: %v", path, err)
-	}
-	t.Cleanup(func() { os.Remove(path) })
 }

@@ -150,10 +150,18 @@ func TestIntegration_CaseMismatchEntries(t *testing.T) {
 	// "Word/Document.xml" ≠ "word/document.xml"
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
-	w.Create("Word/Document.xml")
-	w.Create("_Rels/.rels")
-	w.Create("[Content_Types].xml")
-	w.Close()
+	if _, err := w.Create("Word/Document.xml"); err != nil {
+		t.Fatalf("create Word/Document.xml: %v", err)
+	}
+	if _, err := w.Create("_Rels/.rels"); err != nil {
+		t.Fatalf("create _Rels/.rels: %v", err)
+	}
+	if _, err := w.Create("[Content_Types].xml"); err != nil {
+		t.Fatalf("create [Content_Types].xml: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close zip writer: %v", err)
+	}
 
 	err := Validate(buf.Bytes(), FormatDOCX)
 	if err == nil {
