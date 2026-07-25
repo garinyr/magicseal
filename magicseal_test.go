@@ -8,7 +8,7 @@ import (
 )
 
 func TestValidateDOCX(t *testing.T) {
-	data := makeMinimalZip([]string{
+	data := makeMinimalZip(t, []string{
 		"word/document.xml",
 		"_rels/.rels",
 		"[Content_Types].xml",
@@ -19,7 +19,7 @@ func TestValidateDOCX(t *testing.T) {
 }
 
 func TestValidateXLSX(t *testing.T) {
-	data := makeMinimalZip([]string{
+	data := makeMinimalZip(t, []string{
 		"xl/workbook.xml",
 		"_rels/.rels",
 		"[Content_Types].xml",
@@ -31,7 +31,7 @@ func TestValidateXLSX(t *testing.T) {
 }
 
 func TestValidatePPTX(t *testing.T) {
-	data := makeMinimalZip([]string{
+	data := makeMinimalZip(t, []string{
 		"ppt/presentation.xml",
 		"_rels/.rels",
 		"[Content_Types].xml",
@@ -43,7 +43,7 @@ func TestValidatePPTX(t *testing.T) {
 }
 
 func TestValidateUnsupportedFormat(t *testing.T) {
-	data := makeMinimalZip([]string{"x"})
+	data := makeMinimalZip(t, []string{"x"})
 	err := Validate(data, "unknown")
 	if err == nil {
 		t.Fatal("Validate(unknown format): expected error, got nil")
@@ -55,7 +55,7 @@ func TestValidateUnsupportedFormat(t *testing.T) {
 
 func TestValidateWrongFormat(t *testing.T) {
 	// Data is a valid DOCX, but claimed as XLSX — should fail on missing XLSX entries.
-	data := makeMinimalZip([]string{
+	data := makeMinimalZip(t, []string{
 		"word/document.xml",
 		"_rels/.rels",
 		"[Content_Types].xml",
@@ -71,7 +71,7 @@ func TestValidateWrongFormat(t *testing.T) {
 
 func TestValidateRenamedZip(t *testing.T) {
 	// A plain ZIP (no Office entries) claimed as DOCX — must reject.
-	data := makeMinimalZip([]string{"readme.txt", "images/photo.png"})
+	data := makeMinimalZip(t, []string{"readme.txt", "images/photo.png"})
 	err := Validate(data, FormatDOCX)
 	if err == nil {
 		t.Fatal("Validate(renamed ZIP): expected error, got nil")
@@ -105,7 +105,7 @@ func TestValidateEmptyData(t *testing.T) {
 func TestValidateFromPath(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.docx")
-	data := makeMinimalZip([]string{
+	data := makeMinimalZip(t, []string{
 		"word/document.xml",
 		"_rels/.rels",
 		"[Content_Types].xml",

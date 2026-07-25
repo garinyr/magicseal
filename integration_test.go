@@ -22,7 +22,7 @@ func TestIntegration_ValidFormats(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.name), func(t *testing.T) {
-			data := makeMinimalZip(tt.format.RequiredEntries)
+			data := makeMinimalZip(t, tt.format.RequiredEntries)
 			if err := Validate(data, tt.name); err != nil {
 				t.Errorf("Validate(valid %s): unexpected error: %v", tt.name, err)
 			}
@@ -32,7 +32,7 @@ func TestIntegration_ValidFormats(t *testing.T) {
 
 func TestIntegration_RenamedZip(t *testing.T) {
 	// A plain ZIP with non-Office entries claimed as DOCX — Layer 3 must reject.
-	data := makeMinimalZip([]string{"notes.txt", "archive.zip"})
+	data := makeMinimalZip(t, []string{"notes.txt", "archive.zip"})
 	err := Validate(data, FormatDOCX)
 	if err == nil {
 		t.Fatal("Validate(renamed ZIP as DOCX): expected error, got nil")
@@ -43,7 +43,7 @@ func TestIntegration_RenamedZip(t *testing.T) {
 }
 
 func TestIntegration_CorruptCentralDirectory(t *testing.T) {
-	valid := makeMinimalZip(makeFormatDOCX().RequiredEntries)
+	valid := makeMinimalZip(t, makeFormatDOCX().RequiredEntries)
 	corrupt := make([]byte, len(valid))
 	copy(corrupt, valid)
 	// Flip bits in the last 15 bytes (EOCD area)
@@ -62,7 +62,7 @@ func TestIntegration_CorruptCentralDirectory(t *testing.T) {
 func TestIntegration_MissingEntry(t *testing.T) {
 	// Build a ZIP that has all but one required entry removed.
 	required := makeFormatDOCX().RequiredEntries
-	data := makeMinimalZip(required[:len(required)-1]) // drop last entry
+	data := makeMinimalZip(t, required[:len(required)-1]) // drop last entry
 	err := Validate(data, FormatDOCX)
 	if err == nil {
 		t.Fatal("Validate(missing entry): expected error, got nil")
@@ -128,7 +128,7 @@ func TestIntegration_EmptyFile(t *testing.T) {
 }
 
 func TestIntegration_TruncatedZip(t *testing.T) {
-	full := makeMinimalZip(makeFormatDOCX().RequiredEntries)
+	full := makeMinimalZip(t, makeFormatDOCX().RequiredEntries)
 	// Cut off the central directory (last ~40 bytes or so)
 	truncateAt := len(full) - 10
 	if truncateAt < 4 {
@@ -150,10 +150,18 @@ func TestIntegration_CaseMismatchEntries(t *testing.T) {
 	// "Word/Document.xml" ≠ "word/document.xml"
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
-	w.Create("Word/Document.xml")
-	w.Create("_Rels/.rels")
-	w.Create("[Content_Types].xml")
-	w.Close()
+	if _, err := w.Create("Word/Document.xml"); err != nil {
+		t.Fatalf("create Word/Document.xml: %v", err)
+	}
+	if _, err := w.Create("_Rels/.rels"); err != nil {
+		t.Fatalf("create _Rels/.rels: %v", err)
+	}
+	if _, err := w.Create("[Content_Types].xml"); err != nil {
+		t.Fatalf("create [Content_Types].xml: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close zip writer: %v", err)
+	}
 
 	err := Validate(buf.Bytes(), FormatDOCX)
 	if err == nil {
@@ -170,7 +178,7 @@ func TestIntegration_NoResourceLeak(t *testing.T) {
 	// Validate operates entirely in-memory on []byte — no file descriptors
 	// or external resources are allocated. This test verifies that repeatedly
 	// calling Validate does not accumulate any observable resource usage.
-	data := makeMinimalZip(makeFormatDOCX().RequiredEntries)
+	data := makeMinimalZip(t, makeFormatDOCX().RequiredEntries)
 	for i := 0; i < 1000; i++ {
 		if err := Validate(data, FormatDOCX); err != nil {
 			t.Fatalf("iteration %d: unexpected error: %v", i, err)
@@ -197,7 +205,7 @@ func writeFile(t *testing.T, path string, data []byte) {
 // --- 1.8.6 Concurrency test ---
 
 func TestConcurrency_Validate(t *testing.T) {
-	data := makeMinimalZip(makeFormatDOCX().RequiredEntries)
+	data := makeMinimalZip(t, makeFormatDOCX().RequiredEntries)
 
 	var wg sync.WaitGroup
 	errs := make(chan error, 100)
@@ -220,9 +228,9 @@ func TestConcurrency_Validate(t *testing.T) {
 }
 
 func TestConcurrency_MultipleFormats(t *testing.T) {
-	docxData := makeMinimalZip(makeFormatDOCX().RequiredEntries)
-	xlsxData := makeMinimalZip(makeFormatXLSX().RequiredEntries)
-	pptxData := makeMinimalZip(makeFormatPPTX().RequiredEntries)
+	docxData := makeMinimalZip(t, makeFormatDOCX().RequiredEntries)
+	xlsxData := makeMinimalZip(t, makeFormatXLSX().RequiredEntries)
+	pptxData := makeMinimalZip(t, makeFormatPPTX().RequiredEntries)
 
 	var wg sync.WaitGroup
 	errs := make(chan error, 300)

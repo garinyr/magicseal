@@ -4,24 +4,29 @@ import (
 	"archive/zip"
 	"bytes"
 	"errors"
-	"os"
 	"testing"
 )
 
 // makeMinimalZip creates a minimal valid ZIP file in memory with the given entry names.
 // Entries are stored (no compression) with empty content.
-func makeMinimalZip(entryNames []string) []byte {
+// It uses t.Helper() so failures are attributed to the call site.
+func makeMinimalZip(t testing.TB, entryNames []string) []byte {
+	t.Helper()
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
 	for _, name := range entryNames {
-		w.Create(name)
+		if _, err := w.Create(name); err != nil {
+			t.Fatalf("zip.Create(%q): %v", name, err)
+		}
 	}
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Fatalf("zip.Close: %v", err)
+	}
 	return buf.Bytes()
 }
 
 func TestParseZipValid(t *testing.T) {
-	data := makeMinimalZip([]string{"word/document.xml", "_rels/.rels", "[Content_Types].xml"})
+	data := makeMinimalZip(t, []string{"word/document.xml", "_rels/.rels", "[Content_Types].xml"})
 	entries, err := parseZip(data)
 	if err != nil {
 		t.Fatalf("parseZip(valid ZIP): unexpected error: %v", err)
@@ -63,7 +68,7 @@ func TestParseZipNotZipData(t *testing.T) {
 
 func TestParseZipTruncated(t *testing.T) {
 	// Take a valid ZIP and truncate it — simulate interrupted upload.
-	full := makeMinimalZip([]string{"a", "b", "c"})
+	full := makeMinimalZip(t, []string{"a", "b", "c"})
 	truncated := full[:len(full)-20] // chop off the central directory
 	_, err := parseZip(truncated)
 	if err == nil {
@@ -76,7 +81,7 @@ func TestParseZipTruncated(t *testing.T) {
 
 func TestParseZipPrependGarbage(t *testing.T) {
 	// Prepend garbage bytes before a valid ZIP — simulates prepend attack.
-	valid := makeMinimalZip([]string{"readme.txt"})
+	valid := makeMinimalZip(t, []string{"readme.txt"})
 	garbage := append([]byte("junk data here "), valid...)
 	entries, err := parseZip(garbage)
 	// archive/zip.NewReader uses EOCD at the end, so prepend garbage
@@ -93,7 +98,7 @@ func TestParseZipPrependGarbage(t *testing.T) {
 
 func TestParseZipCorruptCentralDirectory(t *testing.T) {
 	// Corrupt the central directory portion (tail of file) by overwriting bytes.
-	valid := makeMinimalZip([]string{"a", "b"})
+	valid := makeMinimalZip(t, []string{"a", "b"})
 	corrupt := make([]byte, len(valid))
 	copy(corrupt, valid)
 	// Scramble the last 10 bytes (EOCD / central directory area)
@@ -113,10 +118,17 @@ func TestParseZipPreservesSizes(t *testing.T) {
 	// Create a ZIP with a known content to verify size metadata.
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
-	fw, _ := w.Create("hello.txt")
+	fw, err := w.Create("hello.txt")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
 	content := []byte("hello world")
-	fw.Write(content)
-	w.Close()
+	if _, err := fw.Write(content); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
 
 	entries, err := parseZip(buf.Bytes())
 	if err != nil {
@@ -128,14 +140,4 @@ func TestParseZipPreservesSizes(t *testing.T) {
 	if entries[0].UncompressedSize64 != uint64(len(content)) {
 		t.Errorf("UncompressedSize64: got %d, want %d", entries[0].UncompressedSize64, len(content))
 	}
-}
-
-// Helper for tests that need actual OS files (Phase 1.8).
-func makeZipFile(t *testing.T, path string, entryNames []string) {
-	t.Helper()
-	data := makeMinimalZip(entryNames)
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		t.Fatalf("failed to write test fixture %s: %v", path, err)
-	}
-	t.Cleanup(func() { os.Remove(path) })
 }
