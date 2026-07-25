@@ -9,6 +9,7 @@ import (
 )
 
 // minimalDOCX creates a minimal valid DOCX in memory (ZIP with required entries).
+// It returns an error if the ZIP cannot be constructed.
 func minimalDOCX() ([]byte, error) {
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
