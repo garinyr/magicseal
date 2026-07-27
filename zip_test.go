@@ -27,7 +27,7 @@ func makeMinimalZip(t testing.TB, entryNames []string) []byte {
 
 func TestParseZipValid(t *testing.T) {
 	data := makeMinimalZip(t, []string{"word/document.xml", "_rels/.rels", "[Content_Types].xml"})
-	entries, err := parseZip(data)
+	entries, err := parseZip(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		t.Fatalf("parseZip(valid ZIP): unexpected error: %v", err)
 	}
@@ -46,7 +46,8 @@ func TestParseZipValid(t *testing.T) {
 }
 
 func TestParseZipEmptyFile(t *testing.T) {
-	_, err := parseZip([]byte{})
+	data := []byte{}
+	_, err := parseZip(bytes.NewReader(data), int64(len(data)))
 	if err == nil {
 		t.Fatal("parseZip(empty): expected error, got nil")
 	}
@@ -57,7 +58,7 @@ func TestParseZipEmptyFile(t *testing.T) {
 
 func TestParseZipNotZipData(t *testing.T) {
 	data := []byte("not a zip file at all")
-	_, err := parseZip(data)
+	_, err := parseZip(bytes.NewReader(data), int64(len(data)))
 	if err == nil {
 		t.Fatal("parseZip(non-ZIP): expected error, got nil")
 	}
@@ -70,7 +71,7 @@ func TestParseZipTruncated(t *testing.T) {
 	// Take a valid ZIP and truncate it — simulate interrupted upload.
 	full := makeMinimalZip(t, []string{"a", "b", "c"})
 	truncated := full[:len(full)-20] // chop off the central directory
-	_, err := parseZip(truncated)
+	_, err := parseZip(bytes.NewReader(truncated), int64(len(truncated)))
 	if err == nil {
 		t.Fatal("parseZip(truncated): expected error, got nil")
 	}
@@ -83,7 +84,7 @@ func TestParseZipPrependGarbage(t *testing.T) {
 	// Prepend garbage bytes before a valid ZIP — simulates prepend attack.
 	valid := makeMinimalZip(t, []string{"readme.txt"})
 	garbage := append([]byte("junk data here "), valid...)
-	entries, err := parseZip(garbage)
+	entries, err := parseZip(bytes.NewReader(garbage), int64(len(garbage)))
 	// archive/zip.NewReader uses EOCD at the end, so prepend garbage
 	// should still parse correctly. This confirms central-directory-based
 	// parsing is resilient to prepend attacks.
@@ -105,7 +106,7 @@ func TestParseZipCorruptCentralDirectory(t *testing.T) {
 	for i := len(corrupt) - 10; i < len(corrupt); i++ {
 		corrupt[i] ^= 0xFF
 	}
-	_, err := parseZip(corrupt)
+	_, err := parseZip(bytes.NewReader(corrupt), int64(len(corrupt)))
 	if err == nil {
 		t.Fatal("parseZip(corrupt central dir): expected error, got nil")
 	}
@@ -130,7 +131,8 @@ func TestParseZipPreservesSizes(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 
-	entries, err := parseZip(buf.Bytes())
+	data := buf.Bytes()
+	entries, err := parseZip(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		t.Fatalf("parseZip: %v", err)
 	}

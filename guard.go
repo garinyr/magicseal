@@ -21,11 +21,13 @@ const (
 //
 // Guard runs immediately after Layer 2 (ZIP parse), before Layer 3 (required entries).
 // This is defense-in-depth: files that clearly violate limits are rejected early.
-func checkLimits(zipEntries []zipEntry) error {
+func checkLimits(zipEntries []zipEntry, cfg *ValidatorConfig) error {
+	cfg = cfg.Defaults()
+
 	// 1. Entry count guard
-	if len(zipEntries) > DefaultMaxEntryCount {
+	if len(zipEntries) > cfg.MaxTotalEntries {
 		return fmt.Errorf("%w: %d entries exceeds limit %d",
-			ErrTooManyEntries, len(zipEntries), DefaultMaxEntryCount)
+			ErrTooManyEntries, len(zipEntries), cfg.MaxTotalEntries)
 	}
 
 	// 2. Total decompressed size guard
@@ -37,9 +39,9 @@ func checkLimits(zipEntries []zipEntry) error {
 				ErrSizeLimitExceeded)
 		}
 		total += e.UncompressedSize64
-		if total > uint64(DefaultMaxDecompressedSize) {
+		if total > uint64(cfg.MaxDecompressedSize) {
 			return fmt.Errorf("%w: total decompressed size %d exceeds limit %d",
-				ErrSizeLimitExceeded, total, DefaultMaxDecompressedSize)
+				ErrSizeLimitExceeded, total, cfg.MaxDecompressedSize)
 		}
 	}
 
@@ -47,17 +49,16 @@ func checkLimits(zipEntries []zipEntry) error {
 	for _, e := range zipEntries {
 		if e.CompressedSize64 == 0 {
 			// Skip: folder entries or empty files have no compressed size.
-			// Divide-by-zero is avoided here.
 			continue
 		}
-		// Also guard against compressed > uncompressed (degenerate case, not a bomb)
+		// Guard against compressed > uncompressed (degenerate case, not a bomb)
 		if e.CompressedSize64 > e.UncompressedSize64 {
 			continue
 		}
 		ratio := float64(e.UncompressedSize64) / float64(e.CompressedSize64)
-		if ratio > DefaultMaxCompressionRatio {
+		if ratio > cfg.MaxCompressionRatio {
 			return fmt.Errorf("%w: entry %q has compression ratio %.1f (limit %.1f)",
-				ErrCompressionRatioExceeded, e.Name, ratio, DefaultMaxCompressionRatio)
+				ErrCompressionRatioExceeded, e.Name, ratio, cfg.MaxCompressionRatio)
 		}
 	}
 

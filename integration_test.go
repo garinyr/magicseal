@@ -83,7 +83,7 @@ func TestIntegration_ZipBombSmall(t *testing.T) {
 	}
 	// We test checkLimits directly for ratio — Validate() integration
 	// with a real zip bomb is tested at the guard level.
-	err := checkLimits(entries)
+	err := checkLimits(entries, nil)
 	if err == nil {
 		t.Fatal("checkLimits(zip bomb ratio): expected error, got nil")
 	}
@@ -97,7 +97,7 @@ func TestIntegration_TooManyEntries(t *testing.T) {
 	for i := range entries {
 		entries[i] = zipEntry{Name: "x", CompressedSize64: 1, UncompressedSize64: 1}
 	}
-	err := checkLimits(entries)
+	err := checkLimits(entries, nil)
 	if err == nil {
 		t.Fatal("checkLimits(>10k entries): expected error, got nil")
 	}

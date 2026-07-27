@@ -24,6 +24,8 @@ go get github.com/garinyr/magicseal
 
 ## Usage
 
+### Basic validation
+
 ```go
 import "github.com/garinyr/magicseal"
 
@@ -40,77 +42,139 @@ if err := magicseal.ValidateFromPath("spreadsheet.xlsx", magicseal.FormatXLSX); 
 }
 ```
 
-## Supported Formats
+### Streaming (large files)
 
-| Format | Extension | MIME |
-|--------|-----------|------|
-| DOCX   | `.docx`   | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` |
-| XLSX   | `.xlsx`   | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` |
-| PPTX   | `.pptx`   | `application/vnd.openxmlformats-officedocument.presentationml.presentation` |
+For files >100MB, use `ValidateReader` to avoid loading everything into memory:
 
-## Validation Layers
+```go
+f, _ := os.Open("large.xlsx")
+defer f.Close()
+fi, _ := f.Stat()
+if err := magicseal.ValidateReader(f, fi.Size(), magicseal.FormatXLSX); err != nil {
+    // handle invalid file
+}
+```
 
-Three validation layers with a built-in safety guard between layers 2 and 3:
+### Custom format registration
 
-**Layer 1 — Magic bytes**  
-Fast-fail check on `PK\x03\x04` (ZIP header). Non-ZIP files are rejected immediately
-without further processing.
+```go
+magicseal.RegisterFormat(magicseal.Format{
+    Name:            "xpi",
+    Extensions:      []string{".xpi"},
+    MagicBytes:      []byte("PK\x03\x04"),
+    RequiredEntries: []string{"manifest.json"},
+})
 
-**Layer 2 — ZIP structure**  
-Parses the ZIP central directory (EOCD-based via `archive/zip.NewReader`), not just
-the local file headers. Corrupt, truncated, or garbage-prepended files are detected here.
+// List all registered formats
+for _, f := range magicseal.ListFormats() {
+    fmt.Println(f.Name, f.Extensions)
+}
 
-**Guard — Safety limits** *(runs before layer 3)*  
-Defense-in-depth checks to prevent resource exhaustion:
-- Maximum entry count (10,000)
-- Maximum total decompressed size (256 MB)
-- Maximum compression ratio (100:1) — catches zip bombs
+// Remove a format
+magicseal.UnregisterFormat("xpi")
+```
 
-**Layer 3 — Required entries**  
-Confirms that every mandatory entry for the claimed format exists in the archive
-(case-sensitive exact match). A ZIP renamed to `.docx` will fail here because it
-lacks `word/document.xml` and the other required Office Open XML entries.
+### Configurable limits
 
-All decisions are made from **central-directory metadata only** — file contents are
-never opened or decompressed. The package is safe to use on untrusted input.
+```go
+err := magicseal.ValidateWithConfig(data, magicseal.FormatDOCX, &magicseal.ValidatorConfig{
+    MaxDecompressedSize: 128 << 20, // 128 MB
+    MaxCompressionRatio: 50.0,      // tighten ratio guard
+})
+```
 
-## Error Handling
-
-All seven sentinel errors support `errors.Is()` for programmatic inspection:
+### Structured error handling
 
 ```go
 err := magicseal.Validate(data, magicseal.FormatDOCX)
-if errors.Is(err, magicseal.ErrMagicMismatch)            { /* not a ZIP file */ }
-if errors.Is(err, magicseal.ErrInvalidZip)               { /* corrupted ZIP */  }
-if errors.Is(err, magicseal.ErrMissingEntry)             { /* missing entry */  }
-if errors.Is(err, magicseal.ErrCompressionRatioExceeded) { /* zip bomb */       }
-if errors.Is(err, magicseal.ErrSizeLimitExceeded)        { /* too large */      }
-if errors.Is(err, magicseal.ErrTooManyEntries)           { /* too many */       }
-if errors.Is(err, magicseal.ErrUnsupportedFormat)        { /* unknown format */ }
+
+// Sentinel errors — backward compatible (same as MVP 1)
+if errors.Is(err, magicseal.ErrMissingEntry) {
+    // handle missing entry
+}
+
+// Structured error — richer inspection
+var ve *magicseal.ValidationError
+if errors.As(err, &ve) {
+    fmt.Printf("code=%d format=%s details=%s\n", ve.Code, ve.Format, ve.Details)
+}
 ```
+
+### CLI
+
+```sh
+# Install
+go install github.com/garinyr/magicseal/cmd/magicseal@latest
+
+# Check a file
+magicseal check document.docx --as docx
+
+# JSON output
+magicseal check file.apk --as apk --json
+
+# List registered formats
+magicseal formats
+```
+
+Exit codes: `0` = valid, `1` = invalid, `2` = error.
+
+## Supported Formats
+
+| Format | Extension | Key Required Entries |
+|--------|-----------|---------------------|
+| DOCX   | `.docx`   | `word/document.xml`, `_rels/.rels`, `[Content_Types].xml` |
+| XLSX   | `.xlsx`   | `xl/workbook.xml`, `_rels/.rels`, `[Content_Types].xml`, `xl/_rels/workbook.xml.rels` |
+| PPTX   | `.pptx`   | `ppt/presentation.xml`, `_rels/.rels`, `[Content_Types].xml`, `ppt/_rels/presentation.xml.rels` |
+| ODT    | `.odt`    | `content.xml`, `META-INF/manifest.xml`, `mimetype` |
+| ODS    | `.ods`    | `content.xml`, `META-INF/manifest.xml`, `mimetype` |
+| JAR    | `.jar`    | `META-INF/MANIFEST.MF` |
+| APK    | `.apk`    | `AndroidManifest.xml`, `classes.dex` (unsigned/debug APKs supported) |
+| XPI    | `.xpi`    | `manifest.json` (WebExtension, Firefox 57+) |
+
+## Validation Layers
+
+**Layer 1 — Magic bytes**: Fast-fail on non-ZIP files.
+
+**Guard — Path traversal**: All entry names checked for `../`, `..\`, absolute paths, null byte injection. Platform-consistent via forward-slash semantics.
+
+**Layer 2 — ZIP structure**: Central directory parsing via `archive/zip.NewReader`.
+
+**Guard — Safety limits**: Entry count (default 10k), total decompressed size (default 256MB), compression ratio (default 100:1).
+
+**Layer 3 — Required entries**: Exact case-sensitive match of mandatory entries.
+
+All decisions from **central-directory metadata only** — file contents are never decompressed.
+
+## Error Handling
+
+Ten sentinel errors support `errors.Is()`:
+
+| Sentinel | Meaning |
+|----------|---------|
+| `ErrMagicMismatch` | Not a ZIP file |
+| `ErrInvalidZip` | Corrupted ZIP structure |
+| `ErrMissingEntry` | Required entry absent |
+| `ErrCompressionRatioExceeded` | Zip bomb (high ratio) |
+| `ErrSizeLimitExceeded` | Total size exceeds limit |
+| `ErrTooManyEntries` | Entry count exceeds limit |
+| `ErrUnsupportedFormat` | Unknown format |
+| `ErrPathTraversal` | Suspicious entry name |
+| `ErrFormatAlreadyRegistered` | Duplicate format registration |
+| `ErrFormatNotRegistered` | Unregistering unknown format |
+
+`ValidationError` wraps sentinels with machine-readable `Code` (type `ErrorCode`), `Format`, and `Details` fields. `errors.Is()` continues to work — backward compatible.
+
+## Dropped Formats
+
+**CRX (Chrome Extension)**: `.crx` files use a custom binary header before ZIP data starts — not valid ZIP from byte 0. Not covered by MagicSeal's architecture. See `docs/task/magicseal-mvp2.md` for details.
 
 ## Design Properties
 
-- **Thread-safe** — the format registry is initialized once at startup and is read-only
-  afterwards. `Validate` can be called concurrently from any number of goroutines without
-  locks.
-- **Metadata-only** — entry contents are never decompressed. The package reads the ZIP
-  central directory only.
-- **Single read** — input data is read once and the parsed result is reused across all
-  validation layers.
-- **Zero dependencies** — only the Go standard library.
-
-## Current Limitations
-
-| Capability | Status |
-|-----------|--------|
-| Custom format registration | Coming in a future release |
-| Streaming / `io.ReaderAt` support | Coming in a future release |
-| Structured error codes (`ValidationError`) | Coming in a future release |
-| Path traversal detection in entry names | Coming in a future release |
-| Configurable limits | Coming in a future release |
-| Additional built-in formats (ODF, JAR, APK) | Coming in a future release |
-| CLI wrapper | Coming in a future release |
+- **Thread-safe** — registry protected by `sync.RWMutex`, safe for concurrent `RegisterFormat`/`UnregisterFormat`/`Validate`.
+- **Metadata-only** — entry contents are never decompressed.
+- **Single read** — input read once, result reused across layers.
+- **Mutable but safe** — formats can be registered at runtime (MVP 2).
+- **Zero dependencies** — standard library only.
 
 ## License
 

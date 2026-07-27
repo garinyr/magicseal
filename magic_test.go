@@ -1,6 +1,7 @@
 package magicseal
 
 import (
+	"bytes"
 	"errors"
 	"testing"
 )
@@ -8,7 +9,7 @@ import (
 func TestCheckMagicValid(t *testing.T) {
 	f := makeFormatDOCX()
 	data := []byte("PK\x03\x04\x00\x00\x00\x00")
-	if err := checkMagic(data, f); err != nil {
+	if err := checkMagic(bytes.NewReader(data), int64(len(data)), f); err != nil {
 		t.Errorf("checkMagic(valid ZIP header): unexpected error: %v", err)
 	}
 }
@@ -16,7 +17,7 @@ func TestCheckMagicValid(t *testing.T) {
 func TestCheckMagicEmptyData(t *testing.T) {
 	f := makeFormatDOCX()
 	data := []byte{}
-	err := checkMagic(data, f)
+	err := checkMagic(bytes.NewReader(data), int64(len(data)), f)
 	if err == nil {
 		t.Fatal("checkMagic(empty data): expected error, got nil")
 	}
@@ -28,7 +29,7 @@ func TestCheckMagicEmptyData(t *testing.T) {
 func TestCheckMagicTooShort(t *testing.T) {
 	f := makeFormatDOCX()
 	data := []byte("PK") // only 2 bytes, need 4
-	err := checkMagic(data, f)
+	err := checkMagic(bytes.NewReader(data), int64(len(data)), f)
 	if err == nil {
 		t.Fatal("checkMagic(short data): expected error, got nil")
 	}
@@ -40,7 +41,7 @@ func TestCheckMagicTooShort(t *testing.T) {
 func TestCheckMagicWrongBytes(t *testing.T) {
 	f := makeFormatDOCX()
 	data := []byte("MZ\x00\x00") // DOS/PE header, not ZIP
-	err := checkMagic(data, f)
+	err := checkMagic(bytes.NewReader(data), int64(len(data)), f)
 	if err == nil {
 		t.Fatal("checkMagic(wrong bytes): expected error, got nil")
 	}
@@ -53,7 +54,7 @@ func TestCheckMagicNonZip(t *testing.T) {
 	// Plain text file renamed to .docx — Layer 1 should reject immediately.
 	f := makeFormatDOCX()
 	data := []byte("Hello, this is a text file disguised as docx")
-	err := checkMagic(data, f)
+	err := checkMagic(bytes.NewReader(data), int64(len(data)), f)
 	if err == nil {
 		t.Fatal("checkMagic(non-ZIP): expected error, got nil")
 	}
@@ -64,7 +65,7 @@ func TestCheckMagicNonZip(t *testing.T) {
 
 func TestCheckMagicNilData(t *testing.T) {
 	f := makeFormatDOCX()
-	err := checkMagic(nil, f)
+	err := checkMagic(bytes.NewReader(nil), 0, f)
 	if err == nil {
 		t.Fatal("checkMagic(nil): expected error, got nil")
 	}

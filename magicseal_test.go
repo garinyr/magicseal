@@ -1,6 +1,7 @@
 package magicseal
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -125,3 +126,134 @@ func TestValidateFromPathNotFound(t *testing.T) {
 		t.Fatal("ValidateFromPath(missing): expected error, got nil")
 	}
 }
+
+func TestValidateReader(t *testing.T) {
+	data := makeMinimalZip(t, []string{
+		"word/document.xml",
+		"_rels/.rels",
+		"[Content_Types].xml",
+	})
+	r := bytes.NewReader(data)
+	if err := ValidateReader(r, int64(len(data)), FormatDOCX); err != nil {
+		t.Errorf("ValidateReader(valid DOCX): unexpected error: %v", err)
+	}
+}
+
+func TestValidateReaderUnsupportedFormat(t *testing.T) {
+	data := makeMinimalZip(t, []string{"x"})
+	r := bytes.NewReader(data)
+	err := ValidateReader(r, int64(len(data)), "unknown")
+	if err == nil {
+		t.Fatal("ValidateReader(unknown format): expected error, got nil")
+	}
+	if !errors.Is(err, ErrUnsupportedFormat) {
+		t.Errorf("ValidateReader(unknown format): error does not wrap ErrUnsupportedFormat: %v", err)
+	}
+}
+
+func TestValidateReaderWrongFormat(t *testing.T) {
+	data := makeMinimalZip(t, []string{
+		"word/document.xml",
+		"_rels/.rels",
+		"[Content_Types].xml",
+	})
+	r := bytes.NewReader(data)
+	err := ValidateReader(r, int64(len(data)), FormatXLSX)
+	if err == nil {
+		t.Fatal("ValidateReader(wrong format): expected error, got nil")
+	}
+	if !errors.Is(err, ErrMissingEntry) {
+		t.Errorf("ValidateReader(wrong format): expected ErrMissingEntry, got: %v", err)
+	}
+}
+
+func TestValidateODT(t *testing.T) {
+	data := makeMinimalZip(t, []string{
+		"content.xml",
+		"META-INF/manifest.xml",
+		"mimetype",
+	})
+	if err := Validate(data, FormatODT); err != nil {
+		t.Errorf("Validate(valid ODT): unexpected error: %v", err)
+	}
+}
+
+func TestValidateODS(t *testing.T) {
+	data := makeMinimalZip(t, []string{
+		"content.xml",
+		"META-INF/manifest.xml",
+		"mimetype",
+	})
+	if err := Validate(data, FormatODS); err != nil {
+		t.Errorf("Validate(valid ODS): unexpected error: %v", err)
+	}
+}
+
+func TestValidateJAR(t *testing.T) {
+	data := makeMinimalZip(t, []string{
+		"META-INF/MANIFEST.MF",
+	})
+	if err := Validate(data, FormatJAR); err != nil {
+		t.Errorf("Validate(valid JAR): unexpected error: %v", err)
+	}
+}
+
+func TestValidateAPK(t *testing.T) {
+	data := makeMinimalZip(t, []string{
+		"AndroidManifest.xml",
+		"classes.dex",
+	})
+	if err := Validate(data, FormatAPK); err != nil {
+		t.Errorf("Validate(valid APK): unexpected error: %v", err)
+	}
+}
+
+func TestValidateXPI(t *testing.T) {
+	data := makeMinimalZip(t, []string{
+		"manifest.json",
+	})
+	if err := Validate(data, FormatXPI); err != nil {
+		t.Errorf("Validate(valid XPI): unexpected error: %v", err)
+	}
+}
+
+func TestValidateODTMissingMimetype(t *testing.T) {
+	data := makeMinimalZip(t, []string{
+		"content.xml",
+		"META-INF/manifest.xml",
+		// "mimetype" missing
+	})
+	err := Validate(data, FormatODT)
+	if err == nil {
+		t.Fatal("Validate(ODT missing mimetype): expected error, got nil")
+	}
+	if !errors.Is(err, ErrMissingEntry) {
+		t.Errorf("Validate(ODT missing mimetype): expected ErrMissingEntry, got: %v", err)
+	}
+}
+
+func TestValidateAPKUnsigned(t *testing.T) {
+	// Unsigned/debug APK — no META-INF/ directory. Must still pass.
+	data := makeMinimalZip(t, []string{
+		"AndroidManifest.xml",
+		"classes.dex",
+	})
+	if err := Validate(data, FormatAPK); err != nil {
+		t.Errorf("Validate(unsigned APK): unexpected error: %v", err)
+	}
+}
+
+func TestValidateAPKMultiDex(t *testing.T) {
+	// Multi-dex APK with multiple classes.dex files.
+	// classes.dex is the primary one and must exist.
+	data := makeMinimalZip(t, []string{
+		"AndroidManifest.xml",
+		"classes.dex",
+		"classes2.dex",
+		"classes3.dex",
+	})
+	if err := Validate(data, FormatAPK); err != nil {
+		t.Errorf("Validate(multi-dex APK): unexpected error: %v", err)
+	}
+}
+
