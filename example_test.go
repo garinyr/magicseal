@@ -66,7 +66,10 @@ func ExampleRegisterFormat() {
 	}
 
 	// Clean up
-	magicseal.UnregisterFormat("custom-fmt")
+	if err := magicseal.UnregisterFormat("custom-fmt"); err != nil {
+		fmt.Println("unregister failed:", err)
+		return
+	}
 
 	// Verify it's gone
 	lookupErr := magicseal.Validate([]byte("PK\x03\x04"), "custom-fmt")

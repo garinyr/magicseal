@@ -88,7 +88,9 @@ func TestGenerateTestdata(t *testing.T) {
 
 	gen := func(path string, entries []string) {
 		t.Helper()
-		os.MkdirAll(filepath.Dir(path), 0o755)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("MkdirAll(%s): %v", filepath.Dir(path), err)
+		}
 		data := makeMinimalZip(t, entries)
 		if err := os.WriteFile(path, data, 0o644); err != nil {
 			t.Fatalf("WriteFile(%s): %v", path, err)
@@ -119,8 +121,12 @@ func TestGenerateTestdata(t *testing.T) {
 		for i := len(corrupt) - 15; i < len(corrupt); i++ {
 			corrupt[i] ^= 0xFF
 		}
-		os.MkdirAll("testdata/invalid/corrupt-cd", 0o755)
-		os.WriteFile("testdata/invalid/corrupt-cd/broken.zip", corrupt, 0o644)
+		if err := os.MkdirAll("testdata/invalid/corrupt-cd", 0o755); err != nil {
+			t.Fatalf("MkdirAll(corrupt-cd): %v", err)
+		}
+		if err := os.WriteFile("testdata/invalid/corrupt-cd/broken.zip", corrupt, 0o644); err != nil {
+			t.Fatalf("WriteFile(broken.zip): %v", err)
+		}
 		fmt.Println("  created testdata/invalid/corrupt-cd/broken.zip")
 	}
 

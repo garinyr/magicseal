@@ -107,7 +107,11 @@ func TestRegisterFormatSuccess(t *testing.T) {
 	if err := RegisterFormat(f); err != nil {
 		t.Fatalf("RegisterFormat(custom): unexpected error: %v", err)
 	}
-	defer UnregisterFormat("custom")
+	defer func() {
+		if err := UnregisterFormat("custom"); err != nil {
+			t.Errorf("UnregisterFormat(custom): unexpected error: %v", err)
+		}
+	}()
 
 	// Verify format is usable via lookupFormat.
 	got, err := lookupFormat("custom")
@@ -233,10 +237,10 @@ func TestFormatRegistryThreadSafety(t *testing.T) {
 			}
 			// Ignore errors — some may race on duplicate extension if indices collide;
 			// we just care that it doesn't panic/race.
-			RegisterFormat(f)
-			lookupFormat(FormatDOCX)
+			_ = RegisterFormat(f)
+			_, _ = lookupFormat(FormatDOCX)
 			ListFormats()
-			UnregisterFormat(name)
+			_ = UnregisterFormat(name)
 		}(i)
 	}
 	wg.Wait()
